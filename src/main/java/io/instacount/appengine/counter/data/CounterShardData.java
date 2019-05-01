@@ -136,7 +136,7 @@ public class CounterShardData
 	 * Assembles the Key for this entity. If an Entity has a Parent Key, that key will be included in the returned Key
 	 * heirarchy.
 	 */
-	public com.google.appengine.api.datastore.Key getKey()
+	public com.google.cloud.datastore.Key getKey()
 	{
 		return this.getTypedKey().getRaw();
 	}

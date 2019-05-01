@@ -12,18 +12,11 @@
  */
 package io.instacount.appengine.counter.service;
 
-import static org.junit.Assert.*;
-
-import java.math.BigInteger;
-
-import io.instacount.appengine.counter.data.CounterShardOperationData;
-import org.junit.After;
-import org.junit.Before;
-
 import com.google.appengine.api.capabilities.CapabilitiesService;
 import com.google.appengine.api.capabilities.CapabilitiesServiceFactory;
 import com.google.appengine.api.capabilities.Capability;
 import com.google.appengine.api.capabilities.CapabilityStatus;
+import com.google.appengine.api.memcache.LocalMemcacheService;
 import com.google.appengine.api.memcache.MemcacheService;
 import com.google.appengine.api.memcache.MemcacheServiceFactory;
 import com.google.appengine.api.urlfetch.URLFetchServicePb.URLFetchRequest;
@@ -32,12 +25,28 @@ import com.google.appengine.tools.development.testing.LocalDatastoreServiceTestC
 import com.google.appengine.tools.development.testing.LocalMemcacheServiceTestConfig;
 import com.google.appengine.tools.development.testing.LocalServiceTestHelper;
 import com.google.appengine.tools.development.testing.LocalTaskQueueTestConfig;
+import com.google.cloud.datastore.Datastore;
+import com.google.cloud.datastore.testing.LocalDatastoreHelper;
+
+import com.googlecode.objectify.ObjectifyFactory;
 import com.googlecode.objectify.ObjectifyService;
 import com.googlecode.objectify.impl.translate.opt.joda.JodaTimeTranslators;
 import com.googlecode.objectify.util.Closeable;
+
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+
+import java.math.BigInteger;
+
 import io.instacount.appengine.counter.Counter;
 import io.instacount.appengine.counter.data.CounterData;
 import io.instacount.appengine.counter.data.CounterShardData;
+import io.instacount.appengine.counter.data.CounterShardOperationData;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  * An abstract base class for testing {@link ShardedCounterServiceImpl}
@@ -64,6 +73,8 @@ public abstract class AbstractShardedCounterServiceTest
 
 	protected MemcacheService memcache;
 
+	protected static LocalDatastoreHelper localDatastoreHelper;
+
 	protected CapabilitiesService capabilitiesService;
 
 	public static class DeleteShardedCounterDeferredCallback extends LocalTaskQueueTestConfig.DeferredTaskCallback
@@ -84,6 +95,13 @@ public abstract class AbstractShardedCounterServiceTest
 			// and assert that it's working properly.
 			return 200;
 		}
+	}
+
+	@BeforeClass
+	public static void startLocalDatastore() throws Exception
+	{
+		localDatastoreHelper = LocalDatastoreHelper.create();
+		localDatastoreHelper.start();
 	}
 
 	@Before
@@ -111,6 +129,11 @@ public abstract class AbstractShardedCounterServiceTest
 		memcache = MemcacheServiceFactory.getMemcacheService();
 		capabilitiesService = CapabilitiesServiceFactory.getCapabilitiesService();
 
+		// Objectify 6.x can only be tested with LocalDatastoreHelper and its own memcache interface.
+		final com.googlecode.objectify.cache.MemcacheService localMemcacheService = new LocalMemcacheService(memcache);
+		Datastore ds = localDatastoreHelper.getOptions().getService();
+		ObjectifyService.init(new ObjectifyFactory(ds,localMemcacheService));
+
 		// New Objectify 5.1 Way. See https://groups.google.com/forum/#!topic/objectify-appengine/O4FHC_i7EGk
 		this.session = ObjectifyService.begin();
 
@@ -135,6 +158,21 @@ public abstract class AbstractShardedCounterServiceTest
 		this.session.close();
 
 		this.helper.tearDown();
+
+		try
+		{
+			//Reset after each test for test isolation.
+			localDatastoreHelper.reset();
+		} catch (Exception e) {
+			//do nothing
+		}
+	}
+
+	@AfterClass
+	public static void shutdownDatastore() throws Exception
+	{
+		//Only shutdown the datatstore at the end of all the tests.
+		localDatastoreHelper.stop();
 	}
 
 	// ///////////////////////
